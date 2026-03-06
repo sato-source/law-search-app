@@ -13,16 +13,10 @@ module.exports = async function handler(req, res) {
       throw new Error(`law API error: ${r.status}`);
     }
 
-    const text = await r.text();
+    const xml = await r.text();
 
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`law JSON parse error: ${text.slice(0, 200)}`);
-    }
-
-    res.status(200).json(json);
+    // いったんXMLそのまま返す
+    res.status(200).json({ xml });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: String(e) });

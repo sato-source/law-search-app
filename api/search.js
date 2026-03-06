@@ -2,31 +2,27 @@ module.exports = async function handler(req, res) {
   try {
     const q = (req.query.q || "").trim();
 
-    if (!q) {
-      return res.status(200).json({ laws: [] });
-    }
-
-    const url = `https://laws.e-gov.go.jp/api/1/lawlists?keyword=${encodeURIComponent(q)}`;
+    // まずは全法令一覧を取得
+    const url = "https://laws.e-gov.go.jp/api/1/lawlists/1";
     const r = await fetch(url);
 
     if (!r.ok) {
       throw new Error(`search API error: ${r.status}`);
     }
 
-    const text = await r.text();
+    const xml = await r.text();
 
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`search JSON parse error: ${text.slice(0, 200)}`);
-    }
+    // とりあえず文字列検索で候補を抜き出す簡易版
+    // <LawNameListInfo> ... <LawId>...</LawId><LawName>...</LawName> ...
+    const items = [...xml.matchAll(/<LawNameListInfo>[\s\S]*?<LawId>(.*?)<\/LawId>[\s\S]*?<LawName>(.*?)<\/LawName>[\s\S]*?<\/LawNameListInfo>/g)];
 
-    const list = json.data || json.laws || [];
-    const laws = list.map((l) => ({
-      lawName: l.lawName || l.law_title || l.name || "",
-      lawId: l.lawId || l.law_id || ""
-    }));
+    const laws = items
+      .map(m => ({
+        lawId: m[1],
+        lawName: m[2]
+      }))
+      .filter(x => !q || x.lawName.includes(q))
+      .slice(0, 20);
 
     res.status(200).json({ laws });
   } catch (e) {

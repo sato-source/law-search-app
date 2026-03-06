@@ -1,208 +1,6 @@
-<!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>法令検索</title>
-
-<style>
-body{
-font-family:sans-serif;
-margin:24px;
-line-height:1.8;
-background:#fafafa;
-}
-
-input{
-width:min(380px,90vw);
-padding:8px;
-font-size:14px;
-}
-
-button{
-padding:8px 14px;
-font-size:14px;
-cursor:pointer;
-}
-
-ul{
-padding-left:20px;
-}
-
-li{
-cursor:pointer;
-margin:6px 0;
-padding:4px;
-}
-
-li:hover{
-background:#f0f0f0;
-}
-
-pre{
-background:white;
-padding:18px;
-border-radius:6px;
-white-space:pre-wrap;
-word-break:break-word;
-font-size:14px;
-border:1px solid #ddd;
-}
-
-#out{
-max-height:60vh;
-overflow:auto;
-}
-
-.status{
-margin-left:10px;
-font-size:12px;
-color:#666;
-}
-</style>
-</head>
-
-<body>
-
-<h1>法令検索</h1>
-
-<div>
-<input id="q" placeholder="例：労働基準法">
-<button id="btn">検索</button>
-<span class="status" id="status">準備OK</span>
-</div>
-
-<h2 style="margin-top:28px;">検索結果（クリックして本文取得）</h2>
-<ul id="list"></ul>
-
-<h2 style="margin-top:28px;">条文表示</h2>
-<pre id="out">ここに条文が表示されます</pre>
-
-<script>
-
-const qInput=document.getElementById("q")
-const btn=document.getElementById("btn")
-const list=document.getElementById("list")
-const out=document.getElementById("out")
-const statusEl=document.getElementById("status")
-
-btn.onclick=search
-
-qInput.addEventListener("keydown",(e)=>{
-if(e.key==="Enter")search()
-})
-
-function setStatus(t){
-statusEl.textContent=t
-}
-
-async function search(){
-
-try{
-
-const q=qInput.value.trim()
-
-list.innerHTML=""
-out.textContent="ここに条文が表示されます"
-
-if(!q){
-setStatus("検索語を入力してください")
-return
-}
-
-setStatus("検索中")
-
-const res=await fetch(`/api/search?q=${encodeURIComponent(q)}`,{cache:"no-store"})
-const data=await res.json()
-
-if(!res.ok){
-throw new Error(data.error||res.status)
-}
-
-const laws=data.laws||[]
-
-if(laws.length===0){
-
-const li=document.createElement("li")
-li.textContent="候補が見つかりませんでした"
-list.appendChild(li)
-
-setStatus("候補なし")
-return
-}
-
-laws.forEach((law)=>{
-
-const title=law.lawName||"タイトル不明"
-const id=law.lawId||""
-
-const li=document.createElement("li")
-
-li.textContent=`${title} [${id}]`
-
-li.onclick=()=>loadLaw(id,title)
-
-list.appendChild(li)
-
-})
-
-setStatus(`表示OK（${laws.length}件）`)
-
-}catch(e){
-
-console.error(e)
-
-setStatus("検索エラー")
-
-out.textContent="検索エラー\n\n"+String(e)
-
-}
-
-}
-
-async function loadLaw(id,title){
-
-try{
-
-if(!id){
-out.textContent="法令IDなし"
-return
-}
-
-setStatus("本文取得中")
-
-out.textContent="本文取得中..."
-
-const res=await fetch(`/api/law?id=${encodeURIComponent(id)}`,{cache:"no-store"})
-const data=await res.json()
-
-if(!res.ok){
-throw new Error(data.error||res.status)
-}
-
-const xml=data.xml||""
-
-const text=formatLawXml(xml)
-
-out.textContent=title+"\n\n"+text
-
-setStatus("本文表示OK")
-
-}catch(e){
-
-console.error(e)
-
-setStatus("本文取得エラー")
-
-out.textContent="本文取得エラー\n\n"+String(e)
-
-}
-
-}
-
 function formatLawXml(xml){
 
-if(!xml)return""
+if(!xml)return ""
 
 const parser=new DOMParser()
 const doc=parser.parseFromString(xml,"application/xml")
@@ -242,7 +40,9 @@ const tag=child.tagName
 
 if(tag==="Part"||tag==="Chapter"||tag==="Section"){
 
-const title=child.querySelector("PartTitle,ChapterTitle,SectionTitle")?.textContent?.trim()
+const title=
+child.querySelector("PartTitle,ChapterTitle,SectionTitle")
+?.textContent?.trim()
 
 if(title){
 lines.push(title)
@@ -250,7 +50,6 @@ lines.push("")
 }
 
 collectNode(child,lines)
-
 continue
 }
 
@@ -260,40 +59,65 @@ const num=child.getAttribute("Num")||""
 
 lines.push(`第${num}条`)
 
-const caption=child.querySelector("ArticleCaption")?.textContent?.trim()
+const caption=
+child.querySelector("ArticleCaption")
+?.textContent?.trim()
 
 if(caption){
 lines.push("【"+caption+"】")
 }
 
-const paras=child.querySelectorAll("Paragraph")
+const paras=child.querySelectorAll(":scope > Paragraph")
 
-if(paras.length){
-
-paras.forEach(p=>{
-
-const txt=p.textContent.trim()
-
-if(txt)lines.push(txt)
-
-})
-
-}else{
-
-const txt=child.textContent.trim()
-
-if(txt)lines.push(txt)
-
-}
+paras.forEach(p=>collectParagraph(p,lines))
 
 lines.push("")
-
 continue
 }
 
 collectNode(child,lines)
-
 }
+}
+
+function collectParagraph(p,lines){
+
+const num=p.getAttribute("Num")||""
+
+let text=""
+
+const sentence=p.querySelector("ParagraphSentence")
+
+if(sentence){
+text=sentence.textContent.trim()
+}else{
+text=p.textContent.trim()
+}
+
+if(text){
+if(num && num!=="1"){
+lines.push(num+" "+text)
+}else{
+lines.push(text)
+}
+}
+
+const items=p.querySelectorAll(":scope > Item")
+
+items.forEach(item=>{
+
+const itemTitle=item.querySelector("ItemTitle")?.textContent.trim()||""
+
+const itemText=item.querySelector("ItemSentence")
+?.textContent.trim()
+||item.textContent.trim()
+
+if(itemTitle){
+lines.push(itemTitle+" "+itemText)
+}else{
+lines.push(itemText)
+}
+
+})
 
 }
 
@@ -305,8 +129,3 @@ return xml
 .trim()
 
 }
-
-</script>
-
-</body>
-</html>

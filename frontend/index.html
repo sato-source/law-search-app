@@ -98,7 +98,9 @@
 
         setStatus("検索中");
 
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+          cache: "no-store"
+        });
         const data = await res.json();
 
         if (!res.ok) {
@@ -144,16 +146,19 @@
         setStatus("本文取得中");
         out.textContent = "本文を取得しています...";
 
-        const res = await fetch(`/api/law?id=${encodeURIComponent(id)}`);
+        const res = await fetch(`/api/law?id=${encodeURIComponent(id)}`, {
+          cache: "no-store"
+        });
         const data = await res.json();
 
         if (!res.ok) {
           throw new Error(data.error || `law failed: ${res.status}`);
         }
 
-        const xml = data.xml || "本文が見つかりません";
-        out.textContent = `${title}\n\n${xml}`;
+        const xml = data.xml || "";
+        const text = formatLawXml(xml);
 
+        out.textContent = `${title}\n\n${text || "本文が見つかりませんでした"}`;
         setStatus("本文表示OK");
 
       } catch (e) {
@@ -161,6 +166,57 @@
         setStatus("本文取得エラー");
         out.textContent = "本文取得中にエラーが発生しました。\n\n" + String(e);
       }
+    }
+
+    function formatLawXml(xml) {
+      if (!xml) return "";
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(xml, "application/xml");
+
+      if (doc.querySelector("parsererror")) {
+        return xml;
+      }
+
+      const articles = Array.from(doc.getElementsByTagName("Article"));
+      if (articles.length === 0) {
+        return xml;
+      }
+
+      let lines = [];
+
+      articles.forEach((article) => {
+        const num = article.getAttribute("Num") || "";
+        const captionEl = article.getElementsByTagName("ArticleCaption")[0];
+        const title = `第${num}条`;
+        const caption = captionEl ? `【${captionEl.textContent.trim()}】` : "";
+
+        lines.push(title);
+        if (caption) lines.push(caption);
+
+        const paras = Array.from(article.getElementsByTagName("Paragraph"));
+        if (paras.length > 0) {
+          paras.forEach((p) => {
+            const txt = normalizeText(p.textContent);
+            if (txt) lines.push(txt);
+          });
+        } else {
+          const txt = normalizeText(article.textContent);
+          if (txt) lines.push(txt);
+        }
+
+        lines.push("");
+      });
+
+      return lines.join("\n").trim();
+    }
+
+    function normalizeText(text) {
+      return (text || "")
+        .replace(/\s+/g, " ")
+        .replace(/【\s+/g, "【")
+        .replace(/\s+】/g, "】")
+        .trim();
     }
   </script>
 </body>

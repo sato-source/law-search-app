@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>法令検索</title>
 
-  <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#1a5fb4">
-
   <style>
     body {
       font-family: sans-serif;
@@ -15,37 +12,27 @@
       line-height: 1.8;
       background: #fafafa;
     }
-
-    h1, h2 {
-      margin-top: 0;
-    }
-
     input {
       width: min(380px, 90vw);
       padding: 8px;
       font-size: 14px;
     }
-
     button {
       padding: 8px 14px;
       font-size: 14px;
       cursor: pointer;
     }
-
     ul {
       padding-left: 20px;
     }
-
     li {
       cursor: pointer;
       margin: 6px 0;
       padding: 4px;
     }
-
     li:hover {
       background: #f0f0f0;
     }
-
     pre {
       background: white;
       padding: 18px;
@@ -55,22 +42,14 @@
       font-size: 14px;
       border: 1px solid #ddd;
     }
-
     #out {
       max-height: 60vh;
       overflow: auto;
     }
-
     .status {
       margin-left: 10px;
       font-size: 12px;
       color: #666;
-    }
-
-    .hint {
-      color: #666;
-      font-size: 13px;
-      margin-top: 6px;
     }
   </style>
 </head>
@@ -81,7 +60,6 @@
     <input id="q" placeholder="例：労働基準法">
     <button id="btn">検索</button>
     <span class="status" id="status">準備OK</span>
-    <div class="hint">検索結果をクリックすると本文を取得します</div>
   </div>
 
   <h2 style="margin-top:28px;">検索結果（クリックして本文取得）</h2>
@@ -91,8 +69,6 @@
   <pre id="out">ここに条文が表示されます</pre>
 
   <script>
-    const backend = "";
-
     const qInput = document.getElementById("q");
     const btn = document.getElementById("btn");
     const list = document.getElementById("list");
@@ -122,7 +98,7 @@
 
         setStatus("検索中");
 
-        const res = await fetch(`${backend}/api/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -168,7 +144,7 @@
         setStatus("本文取得中");
         out.textContent = "本文を取得しています...";
 
-        const res = await fetch(`${backend}/api/law?id=${encodeURIComponent(id)}`);
+        const res = await fetch(`/api/law?id=${encodeURIComponent(id)}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -176,8 +152,8 @@
         }
 
         const xml = data.xml || "本文が見つかりません";
+        out.textContent = `${title}\n\n${xml}`;
 
-        out.textContent = `${title || ""}\n\n${xml}`;
         setStatus("本文表示OK");
 
       } catch (e) {
@@ -185,10 +161,6 @@
         setStatus("本文取得エラー");
         out.textContent = "本文取得中にエラーが発生しました。\n\n" + String(e);
       }
-    }
-
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(console.error);
     }
   </script>
 </body>

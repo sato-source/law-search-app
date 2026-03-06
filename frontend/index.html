@@ -12,8 +12,11 @@ body{
   line-height:1.8;
   background:#fafafa;
 }
+h1,h2{
+  margin-top:0;
+}
 input{
-  width:min(380px,90vw);
+  width:min(420px,90vw);
   padding:8px;
   font-size:14px;
 }
@@ -21,6 +24,10 @@ button{
   padding:8px 14px;
   font-size:14px;
   cursor:pointer;
+}
+.small-btn{
+  padding:6px 10px;
+  font-size:12px;
 }
 ul{
   padding-left:20px;
@@ -51,23 +58,83 @@ pre{
   font-size:12px;
   color:#666;
 }
+.toolbar{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin:12px 0;
+}
+.section{
+  margin-top:28px;
+}
+.card{
+  background:white;
+  border:1px solid #ddd;
+  border-radius:8px;
+  padding:14px;
+}
+.muted{
+  color:#666;
+  font-size:13px;
+}
+.favorite-item{
+  margin:4px 0;
+  cursor:pointer;
+  color:#0b57d0;
+}
+.favorite-item:hover{
+  text-decoration:underline;
+}
 </style>
 </head>
 <body>
 
 <h1>法令検索</h1>
 
-<div>
-  <input id="q" placeholder="例：労働基準法">
-  <button id="btn">検索</button>
-  <span class="status" id="status">準備OK</span>
+<div class="card">
+  <div class="toolbar">
+    <input id="q" placeholder="例：労働基準法 / 労働 / 残業 / 建設">
+    <button id="btn">検索</button>
+    <span class="status" id="status">準備OK</span>
+  </div>
+  <div class="muted">部分一致・関連語に対応しています。例：残業、有給、建設、派遣</div>
 </div>
 
-<h2 style="margin-top:28px;">検索結果（クリックして本文取得）</h2>
-<ul id="list"></ul>
+<div class="section">
+  <h2>検索結果（クリックして本文取得）</h2>
+  <ul id="list"></ul>
+</div>
 
-<h2 style="margin-top:28px;">条文表示</h2>
-<pre id="out">ここに条文が表示されます</pre>
+<div class="section">
+  <h2>便利機能</h2>
+  <div class="card">
+    <div class="toolbar">
+      <input id="articleJump" placeholder="例：36">
+      <button class="small-btn" id="jumpBtn">条番号ジャンプ</button>
+
+      <input id="keywordSearch" placeholder="本文内検索 例：賃金">
+      <button class="small-btn" id="keywordBtn">本文内検索</button>
+
+      <button class="small-btn" id="copyBtn">本文をコピー</button>
+      <button class="small-btn" id="favoriteBtn">お気に入り保存</button>
+      <button class="small-btn" id="resetBtn">全文に戻す</button>
+    </div>
+    <div class="muted" id="toolStatus">法令を読み込むと使えます</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>お気に入り</h2>
+  <div class="card">
+    <div id="favorites">まだありません</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>条文表示</h2>
+  <pre id="out">ここに条文が表示されます</pre>
+</div>
 
 <script>
 const qInput = document.getElementById("q");
@@ -76,13 +143,109 @@ const list = document.getElementById("list");
 const out = document.getElementById("out");
 const statusEl = document.getElementById("status");
 
+const articleJumpInput = document.getElementById("articleJump");
+const keywordSearchInput = document.getElementById("keywordSearch");
+const jumpBtn = document.getElementById("jumpBtn");
+const keywordBtn = document.getElementById("keywordBtn");
+const copyBtn = document.getElementById("copyBtn");
+const favoriteBtn = document.getElementById("favoriteBtn");
+const resetBtn = document.getElementById("resetBtn");
+const toolStatus = document.getElementById("toolStatus");
+const favoritesEl = document.getElementById("favorites");
+
+let currentLawTitle = "";
+let currentLawId = "";
+let currentLawText = "";
+let currentFullLawText = "";
+
 btn.onclick = search;
 qInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") search();
 });
 
-function setStatus(text){
-  statusEl.textContent = text;
+jumpBtn.onclick = jumpToArticle;
+keywordBtn.onclick = searchInLaw;
+copyBtn.onclick = copyLawText;
+favoriteBtn.onclick = saveFavorite;
+resetBtn.onclick = resetLawText;
+
+renderFavorites();
+
+function setStatus(t){
+  statusEl.textContent = t;
+}
+
+function setToolStatus(t){
+  toolStatus.textContent = t;
+}
+
+function normalizeForSearch(text){
+  return (text || "")
+    .toLowerCase()
+    .replace(/[　\s]+/g, "")
+    .replace(/[（）()・、。]/g, "");
+}
+
+function expandKeywords(query){
+  const dict = {
+    "残業": ["労働基準法", "労働", "時間外", "割増賃金"],
+    "有給": ["労働基準法", "年次有給休暇", "労働"],
+    "解雇": ["労働基準法", "労働契約法", "労働"],
+    "派遣": ["労働者派遣法", "労働者派遣", "派遣"],
+    "建設": ["建設業法", "建設業", "建設"],
+    "安全": ["労働安全衛生法", "安全衛生", "労働"],
+    "衛生": ["労働安全衛生法", "安全衛生", "労働"],
+    "賃金": ["労働基準法", "賃金", "給与"],
+    "退職": ["労働基準法", "労働契約法", "退職"],
+    "雇用": ["雇用保険法", "労働", "雇用"],
+    "外国人": ["出入国管理及び難民認定法", "技能実習法", "特定技能", "労働"],
+    "技能実習": ["技能実習法", "外国人"],
+    "特定技能": ["出入国管理及び難民認定法", "外国人"],
+    "会社": ["会社法"],
+    "個人情報": ["個人情報保護法", "個人情報"],
+    "下請": ["下請代金支払遅延等防止法", "下請法"]
+  };
+
+  const words = query
+    .split(/[\s　]+/)
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  const expanded = [...words];
+
+  words.forEach(word => {
+    Object.keys(dict).forEach(key => {
+      if (word.includes(key) || key.includes(word)) {
+        expanded.push(...dict[key]);
+      }
+    });
+  });
+
+  return [...new Set(expanded)];
+}
+
+function scoreLaw(title, tokens){
+  const normalizedTitle = normalizeForSearch(title);
+  let score = 0;
+
+  tokens.forEach(token => {
+    const t = normalizeForSearch(token);
+    if (!t) return;
+
+    if (normalizedTitle === t) {
+      score += 100;
+    } else if (normalizedTitle.startsWith(t)) {
+      score += 50;
+    } else if (normalizedTitle.includes(t)) {
+      score += 20;
+    }
+
+    if (title.includes(token)) {
+      score += 10;
+    }
+  });
+
+  return score;
 }
 
 async function search(){
@@ -109,8 +272,22 @@ async function search(){
     }
 
     const laws = data.laws || [];
+    const tokens = expandKeywords(q);
 
-    if(laws.length === 0){
+    const ranked = laws
+      .map(law => {
+        const title = law.lawName || "";
+        return {
+          ...law,
+          score: scoreLaw(title, tokens)
+        };
+      })
+      .filter(law => law.score > 0 || laws.length <= 20)
+      .sort((a, b) => b.score - a.score);
+
+    const finalList = ranked.slice(0, 30);
+
+    if(finalList.length === 0){
       const li = document.createElement("li");
       li.textContent = "候補が見つかりませんでした";
       list.appendChild(li);
@@ -118,7 +295,7 @@ async function search(){
       return;
     }
 
-    laws.forEach((law) => {
+    finalList.forEach((law) => {
       const title = law.lawName || "タイトル不明";
       const id = law.lawId || "";
 
@@ -128,7 +305,8 @@ async function search(){
       list.appendChild(li);
     });
 
-    setStatus(`表示OK（${laws.length}件）`);
+    setStatus(`表示OK（${finalList.length}件）`);
+
   }catch(e){
     console.error(e);
     setStatus("検索エラー");
@@ -158,8 +336,15 @@ async function loadLaw(id, title){
     const xml = data.xml || "";
     const text = formatLawXml(xml);
 
-    out.textContent = `${title}\n\n${text || "本文が見つかりませんでした"}`;
+    currentLawTitle = title;
+    currentLawId = id;
+    currentFullLawText = `${title}\n\n${text || "本文が見つかりませんでした"}`;
+    currentLawText = currentFullLawText;
+
+    out.textContent = currentLawText;
+
     setStatus("本文表示OK");
+    setToolStatus("条番号ジャンプ・本文内検索・コピー・お気に入り保存が使えます");
   }catch(e){
     console.error(e);
     setStatus("本文取得エラー");
@@ -309,6 +494,140 @@ function normalizeText(text){
   return (text || "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function jumpToArticle(){
+  if(!currentFullLawText){
+    setToolStatus("先に法令を開いてください");
+    return;
+  }
+
+  const num = articleJumpInput.value.trim();
+  if(!num){
+    setToolStatus("条番号を入力してください");
+    return;
+  }
+
+  const pattern = new RegExp(`第${escapeRegExp(num)}条[\\s\\S]*?(?=\\n第\\d+条|$)`);
+  const match = currentFullLawText.match(pattern);
+
+  if(match){
+    currentLawText = `${currentLawTitle}\n\n${match[0]}`;
+    out.textContent = currentLawText;
+    setToolStatus(`第${num}条を表示しました`);
+  }else{
+    setToolStatus(`第${num}条が見つかりませんでした`);
+  }
+}
+
+function searchInLaw(){
+  if(!currentFullLawText){
+    setToolStatus("先に法令を開いてください");
+    return;
+  }
+
+  const keyword = keywordSearchInput.value.trim();
+  if(!keyword){
+    setToolStatus("本文内検索語を入力してください");
+    return;
+  }
+
+  const lines = currentFullLawText.split("\n");
+  const hits = lines.filter(line => line.includes(keyword));
+
+  if(hits.length === 0){
+    currentLawText = `${currentLawTitle}\n\n「${keyword}」を含む行は見つかりませんでした。`;
+    out.textContent = currentLawText;
+    setToolStatus(`「${keyword}」は見つかりませんでした`);
+    return;
+  }
+
+  currentLawText = `${currentLawTitle}\n\n【「${keyword}」の検索結果】\n\n` + hits.join("\n");
+  out.textContent = currentLawText;
+  setToolStatus(`「${keyword}」を ${hits.length} 件表示しました`);
+}
+
+async function copyLawText(){
+  if(!out.textContent.trim()){
+    setToolStatus("コピーする本文がありません");
+    return;
+  }
+
+  try{
+    await navigator.clipboard.writeText(out.textContent);
+    setToolStatus("コピーしました");
+  }catch(e){
+    setToolStatus("コピーに失敗しました");
+  }
+}
+
+function saveFavorite(){
+  if(!currentLawId || !currentLawTitle){
+    setToolStatus("先に法令を開いてください");
+    return;
+  }
+
+  const raw = localStorage.getItem("lawFavorites") || "[]";
+  let items = [];
+
+  try{
+    items = JSON.parse(raw);
+  }catch(e){
+    items = [];
+  }
+
+  const exists = items.some(x => x.id === currentLawId);
+  if(!exists){
+    items.unshift({
+      id: currentLawId,
+      title: currentLawTitle
+    });
+    localStorage.setItem("lawFavorites", JSON.stringify(items.slice(0, 20)));
+  }
+
+  renderFavorites();
+  setToolStatus("お気に入りに保存しました");
+}
+
+function resetLawText(){
+  if(!currentFullLawText){
+    setToolStatus("先に法令を開いてください");
+    return;
+  }
+
+  currentLawText = currentFullLawText;
+  out.textContent = currentLawText;
+  setToolStatus("全文表示に戻しました");
+}
+
+function renderFavorites(){
+  const raw = localStorage.getItem("lawFavorites") || "[]";
+  let items = [];
+
+  try{
+    items = JSON.parse(raw);
+  }catch(e){
+    items = [];
+  }
+
+  if(items.length === 0){
+    favoritesEl.textContent = "まだありません";
+    return;
+  }
+
+  favoritesEl.innerHTML = "";
+
+  items.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "favorite-item";
+    div.textContent = `${item.title} [${item.id}]`;
+    div.onclick = () => loadLaw(item.id, item.title);
+    favoritesEl.appendChild(div);
+  });
+}
+
+function escapeRegExp(text){
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 </script>
 
